@@ -5,52 +5,49 @@
 package generic_sync_test
 
 import (
-	"fmt"
-	"reflect"
-	"sync"
 	"sync/atomic"
 	"testing"
+
+	generic_sync "github.com/SaveTheRbtz/generic-sync-map-go"
 )
 
 type bench struct {
-	setup func(*testing.B, mapInterface)
-	perG  func(b *testing.B, pb *testing.PB, i int, m mapInterface)
+	setup func(*testing.B, *generic_sync.Map[int64, int64])
+	perG  func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64])
 }
 
 func benchMap(b *testing.B, bench bench) {
-	for _, m := range [...]mapInterface{&DeepCopyMap{}, &RWMutexMap{}, &sync.Map{}} {
-		b.Run(fmt.Sprintf("%T", m), func(b *testing.B) {
-			m = reflect.New(reflect.TypeOf(m).Elem()).Interface().(mapInterface)
-			if bench.setup != nil {
-				bench.setup(b, m)
-			}
+	b.Run("*sync.Map", func(b *testing.B) {
+		m := new(generic_sync.Map[int64, int64])
+		if bench.setup != nil {
+			bench.setup(b, m)
+		}
 
-			b.ResetTimer()
+		b.ResetTimer()
 
-			var i int64
-			b.RunParallel(func(pb *testing.PB) {
-				id := int(atomic.AddInt64(&i, 1) - 1)
-				bench.perG(b, pb, id*b.N, m)
-			})
+		var i int64
+		b.RunParallel(func(pb *testing.PB) {
+			id := atomic.AddInt64(&i, 1) - 1
+			bench.perG(b, pb, id*int64(b.N), m)
 		})
-	}
+	})
 }
 
 func BenchmarkLoadMostlyHits(b *testing.B) {
 	const hits, misses = 1023, 1
 
 	benchMap(b, bench{
-		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+		setup: func(_ *testing.B, m *generic_sync.Map[int64, int64]) {
+			for i := int64(0); i < hits; i++ {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := int64(0); i < hits*2; i++ {
 				m.Load(i % hits)
 			}
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				m.Load(i % (hits + misses))
 			}
@@ -62,17 +59,17 @@ func BenchmarkLoadMostlyMisses(b *testing.B) {
 	const hits, misses = 1, 1023
 
 	benchMap(b, bench{
-		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < hits; i++ {
+		setup: func(_ *testing.B, m *generic_sync.Map[int64, int64]) {
+			for i := int64(0); i < hits; i++ {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := int64(0); i < hits*2; i++ {
 				m.Load(i % hits)
 			}
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				m.Load(i % (hits + misses))
 			}
@@ -84,25 +81,22 @@ func BenchmarkLoadOrStoreBalanced(b *testing.B) {
 	const hits, misses = 128, 128
 
 	benchMap(b, bench{
-		setup: func(b *testing.B, m mapInterface) {
-			if _, ok := m.(*DeepCopyMap); ok {
-				b.Skip("DeepCopyMap has quadratic running time.")
-			}
-			for i := 0; i < hits; i++ {
+		setup: func(b *testing.B, m *generic_sync.Map[int64, int64]) {
+			for i := int64(0); i < hits; i++ {
 				m.LoadOrStore(i, i)
 			}
 			// Prime the map to get it into a steady state.
-			for i := 0; i < hits*2; i++ {
+			for i := int64(0); i < hits*2; i++ {
 				m.Load(i % hits)
 			}
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				j := i % (hits + misses)
 				if j < hits {
 					if _, ok := m.LoadOrStore(j, i); !ok {
-						b.Fatalf("unexpected miss for %v", j)
+						b.Fatalf("unexpected miss for %d", j)
 					}
 				} else {
 					if v, loaded := m.LoadOrStore(i, i); loaded {
@@ -116,13 +110,11 @@ func BenchmarkLoadOrStoreBalanced(b *testing.B) {
 
 func BenchmarkLoadOrStoreUnique(b *testing.B) {
 	benchMap(b, bench{
-		setup: func(b *testing.B, m mapInterface) {
-			if _, ok := m.(*DeepCopyMap); ok {
-				b.Skip("DeepCopyMap has quadratic running time.")
-			}
+		setup: func(b *testing.B, m *generic_sync.Map[int64, int64]) {
+
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				m.LoadOrStore(i, i)
 			}
@@ -132,11 +124,11 @@ func BenchmarkLoadOrStoreUnique(b *testing.B) {
 
 func BenchmarkLoadOrStoreCollision(b *testing.B) {
 	benchMap(b, bench{
-		setup: func(_ *testing.B, m mapInterface) {
+		setup: func(_ *testing.B, m *generic_sync.Map[int64, int64]) {
 			m.LoadOrStore(0, 0)
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				m.LoadOrStore(0, 0)
 			}
@@ -148,15 +140,15 @@ func BenchmarkRange(b *testing.B) {
 	const mapSize = 1 << 10
 
 	benchMap(b, bench{
-		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < mapSize; i++ {
+		setup: func(_ *testing.B, m *generic_sync.Map[int64, int64]) {
+			for i := int64(0); i < mapSize; i++ {
 				m.Store(i, i)
 			}
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
-				m.Range(func(_, _ interface{}) bool { return true })
+				m.Range(func(_, _ int64) bool { return true })
 			}
 		},
 	})
@@ -169,7 +161,7 @@ func BenchmarkRange(b *testing.B) {
 // This forces the Load calls to always acquire the map's mutex.
 func BenchmarkAdversarialAlloc(b *testing.B) {
 	benchMap(b, bench{
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			var stores, loadsSinceStore int64
 			for ; pb.Next(); i++ {
 				m.Load(i)
@@ -192,18 +184,18 @@ func BenchmarkAdversarialDelete(b *testing.B) {
 	const mapSize = 1 << 10
 
 	benchMap(b, bench{
-		setup: func(_ *testing.B, m mapInterface) {
-			for i := 0; i < mapSize; i++ {
+		setup: func(_ *testing.B, m *generic_sync.Map[int64, int64]) {
+			for i := int64(0); i < mapSize; i++ {
 				m.Store(i, i)
 			}
 		},
 
-		perG: func(b *testing.B, pb *testing.PB, i int, m mapInterface) {
+		perG: func(b *testing.B, pb *testing.PB, i int64, m *generic_sync.Map[int64, int64]) {
 			for ; pb.Next(); i++ {
 				m.Load(i)
 
 				if i%mapSize == 0 {
-					m.Range(func(k, _ interface{}) bool {
+					m.Range(func(k, _ int64) bool {
 						m.Delete(k)
 						return false
 					})
