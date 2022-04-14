@@ -10,22 +10,22 @@ import (
 	"unsafe"
 )
 
-// Map is like a Go map[interface{}]interface{} but is safe for concurrent use
+// MapOf is like a Go map[interface{}]interface{} but is safe for concurrent use
 // by multiple goroutines without additional locking or coordination.
 // Loads, stores, and deletes run in amortized constant time.
 //
-// The Map type is specialized. Most code should use a plain Go map instead,
+// The MapOf type is specialized. Most code should use a plain Go map instead,
 // with separate locking or coordination, for better type safety and to make it
 // easier to maintain other invariants along with the map content.
 //
-// The Map type is optimized for two common use cases: (1) when the entry for a given
+// The MapOf type is optimized for two common use cases: (1) when the entry for a given
 // key is only ever written once but read many times, as in caches that only grow,
 // or (2) when multiple goroutines read, write, and overwrite entries for disjoint
-// sets of keys. In these two cases, use of a Map may significantly reduce lock
+// sets of keys. In these two cases, use of a MapOf may significantly reduce lock
 // contention compared to a Go map paired with a separate Mutex or RWMutex.
 //
-// The zero Map is empty and ready for use. A Map must not be copied after first use.
-type Map[K comparable, V any] struct {
+// The zero MapOf is empty and ready for use. A MapOf must not be copied after first use.
+type MapOf[K comparable, V any] struct {
 	mu sync.Mutex
 
 	// read contains the portion of the map's contents that are safe for
@@ -60,7 +60,7 @@ type Map[K comparable, V any] struct {
 	misses int
 }
 
-// readOnly is an immutable struct stored atomically in the Map.read field.
+// readOnly is an immutable struct stored atomically in the MapOf.read field.
 type readOnly[K comparable, V any] struct {
 	m       map[K]*entry[V]
 	amended bool // true if the dirty map contains some key not in m.
@@ -100,7 +100,7 @@ func newEntry[V any](i V) *entry[V] {
 // Load returns the value stored in the map for a key, or nil if no
 // value is present.
 // The ok result indicates whether value was found in the map.
-func (m *Map[K, V]) Load(key K) (value V, ok bool) {
+func (m *MapOf[K, V]) Load(key K) (value V, ok bool) {
 	read, _ := m.read.Load().(readOnly[K, V])
 	e, ok := read.m[key]
 	if !ok && read.amended {
@@ -134,7 +134,7 @@ func (e *entry[V]) load() (value V, ok bool) {
 }
 
 // Store sets the value for a key.
-func (m *Map[K, V]) Store(key K, value V) {
+func (m *MapOf[K, V]) Store(key K, value V) {
 	read, _ := m.read.Load().(readOnly[K, V])
 	if e, ok := read.m[key]; ok && e.tryStore(&value) {
 		return
@@ -197,7 +197,7 @@ func (e *entry[V]) storeLocked(i *V) {
 // LoadOrStore returns the existing value for the key if present.
 // Otherwise, it stores and returns the given value.
 // The loaded result is true if the value was loaded, false if stored.
-func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
+func (m *MapOf[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	// Avoid locking if it's a clean hit.
 	read, _ := m.read.Load().(readOnly[K, V])
 	if e, ok := read.m[key]; ok {
@@ -265,7 +265,7 @@ func (e *entry[V]) tryLoadOrStore(i V) (actual V, loaded, ok bool) {
 }
 
 // Delete deletes the value for a key.
-func (m *Map[K, V]) Delete(key K) {
+func (m *MapOf[K, V]) Delete(key K) {
 	read, _ := m.read.Load().(readOnly[K, V])
 	e, ok := read.m[key]
 	if !ok && read.amended {
@@ -297,14 +297,14 @@ func (e *entry[V]) delete() (hadValue bool) {
 // Range calls f sequentially for each key and value present in the map.
 // If f returns false, range stops the iteration.
 //
-// Range does not necessarily correspond to any consistent snapshot of the Map's
+// Range does not necessarily correspond to any consistent snapshot of the MapOf's
 // contents: no key will be visited more than once, but if the value for any key
 // is stored or deleted concurrently, Range may reflect any mapping for that key
 // from any point during the Range call.
 //
 // Range may be O(N) with the number of elements in the map even if f returns
 // false after a constant number of calls.
-func (m *Map[K, V]) Range(f func(key K, value V) bool) {
+func (m *MapOf[K, V]) Range(f func(key K, value V) bool) {
 	// We need to be able to iterate over all of the keys that were already
 	// present at the start of the call to Range.
 	// If read.amended is false, then read.m satisfies that property without
@@ -337,7 +337,7 @@ func (m *Map[K, V]) Range(f func(key K, value V) bool) {
 	}
 }
 
-func (m *Map[K, V]) missLocked() {
+func (m *MapOf[K, V]) missLocked() {
 	m.misses++
 	if m.misses < len(m.dirty) {
 		return
@@ -347,7 +347,7 @@ func (m *Map[K, V]) missLocked() {
 	m.misses = 0
 }
 
-func (m *Map[K, V]) dirtyLocked() {
+func (m *MapOf[K, V]) dirtyLocked() {
 	if m.dirty != nil {
 		return
 	}

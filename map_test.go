@@ -16,7 +16,7 @@ import (
 func TestConcurrentRange(t *testing.T) {
 	const mapSize = 1 << 10
 
-	m := new(generic_sync.Map[int64, int64])
+	m := new(generic_sync.MapOf[int64, int64])
 	for n := int64(1); n <= mapSize; n++ {
 		m.Store(n, int64(n))
 	}
@@ -68,7 +68,7 @@ func TestConcurrentRange(t *testing.T) {
 		})
 
 		if len(seen) != mapSize {
-			t.Fatalf("Range visited %v elements of %v-element Map", len(seen), mapSize)
+			t.Fatalf("Range visited %v elements of %v-element MapOf", len(seen), mapSize)
 		}
 	}
 }
