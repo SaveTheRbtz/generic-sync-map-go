@@ -1,3 +1,5 @@
+Note that this is a PoC and you probably do not want to depend on this in production.
+
 # Generic implementation of sync.Map
 
 PoC of a 3x faster `sync.Map` in 1.18.
